@@ -57,13 +57,23 @@ def get_optional_of_element_type(types):
         if start != -1 and end != -1:
             return elem_type[:start + 1] + 'Optional[' + elem_type[start + 1: end] + ']]'
 
+def recursive_check_for_none(obj):
+    # Check recursively for attributes of the types for NoneType
+    if not isinstance(obj, (str, int, float, bool)):
+        for item in inspect.getmembers(obj):
+            if item[0] == '__args__':
+                if type(None) in item[1]:
+                    return True
+                recursive_check_for_none(item[1])
+    return False
+
 def check_nonetype(types):
     # Helper API which checks if Nonetype exists in the types. If None exists then,
     # we return the type of the object which is not None to infer Optional type else
     # this function returns None.
-    if type(None) == types[0] or ('__args__' in types[0].__dict__ and type(None) in types[0].__args__):
+    if type(None) == types[0] or recursive_check_for_none(types[0]):
         return types[1]
-    elif type(None) == types[1] or ('__args__' in types[1].__dict__ and type(None) in types[1].__args__):
+    elif type(None) == types[1] or recursive_check_for_none(types[1]):
         return types[0]
     else:
         return None
