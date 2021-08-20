@@ -43,40 +43,12 @@ def get_optional_of_element_type(types):
 
     TODO: To remove this check once Union support lands.
     """
-    elem_type = check_nonetype(types)
+    elem_type = types[1] if type(None) == types[0] else types[0]
     elem_type = get_type(elem_type)
 
     # Optional type is internally converted to Union[type, NoneType], which
     # is not supported yet in TorchScript. Hence, representing the optional type as string.
-    if type(None) in types:
-        return 'Optional[' + elem_type + ']'
-    else:
-        # If the type is from typing module, then extract the element type
-        start = elem_type.find("[")
-        end = elem_type.rfind("]")
-        if start != -1 and end != -1:
-            return elem_type[:start + 1] + 'Optional[' + elem_type[start + 1: end] + ']]'
-
-def recursive_check_for_none(obj):
-    # Check recursively for attributes of the types for NoneType
-    if not isinstance(obj, (str, int, float, bool)):
-        for item in inspect.getmembers(obj):
-            if item[0] == '__args__':
-                if type(None) in item[1]:
-                    return True
-                recursive_check_for_none(item[1])
-    return False
-
-def check_nonetype(types):
-    # Helper API which checks if Nonetype exists in the types. If None exists then,
-    # we return the type of the object which is not None to infer Optional type else
-    # this function returns None.
-    if type(None) == types[0] or recursive_check_for_none(types[0]):
-        return types[1]
-    elif type(None) == types[1] or recursive_check_for_none(types[1]):
-        return types[0]
-    else:
-        return None
+    return 'Optional[' + elem_type + ']'
 
 def get_qualified_name(func):
     return func.__qualname__
@@ -131,7 +103,7 @@ if _IS_MONKEYTYPE_INSTALLED:
             for arg, types in all_args.items():
                 types = list(types)
                 type_length = len(types)
-                if type_length == 2 and check_nonetype(types):
+                if type_length == 2 and type(None) in types:
                     # TODO: To remove this check once Union suppport in TorchScript lands.
                     all_args[arg] = get_optional_of_element_type(types)
                 elif type_length > 1:
