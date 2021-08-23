@@ -99,20 +99,33 @@ bool Function::append_operator(
     // from model. We can use it to handle backward compatibility.
     if (num_specified_args &&
         num_specified_args.value() < static_cast<int64_t>(args.size())) {
-      // Sanity check at load time, to save perf at runtime
-      for (size_t i = num_specified_args.value(); i < args.size(); ++i) {
-        auto default_val = args[i].default_value();
-        TORCH_CHECK(
-            default_val.has_value(),
-            "Error happened at preparing for default values for the argument. The ",
-            i,
-            "th arguement of operator",
-            opname,
-            " does not have a specified value or default value. ");
-      }
       fn = [fn, num_specified_args, args](Stack& stack) {
-        for (size_t i = num_specified_args.value(); i < args.size(); ++i) {
+        std::vector<IValue> out_args;
+        // the end of stack will be out argument, and there might be more than
+        // one out argument. The following logic will pop all out argument
+        // from stack to out_args, push the default argument value, and then
+        // push the out_args back to stack
+        for (size_t i = args.size() - 1; i > 0 && args.at(i).is_out(); i--) {
+          out_args.push_back(stack.back());
+          stack.pop_back();
+        }
+        size_t start_index = num_specified_args.value() - out_args.size();
+        for (size_t i = (start_index >= 0 ? start_index : 0); i < args.size();
+             ++i) {
+          auto default_val = args[i].default_value();
+          TORCH_CHECK(
+              default_val.has_value(),
+              "Error happened at preparing for default values for the argument. The ",
+              i,
+              "th arguement ",
+              args[i].name(),
+              " does not have a specified value or default value. ");
+
           stack.push_back(args[i].default_value());
+        }
+        while (!out_args.empty()) {
+          stack.push_back(out_args.back());
+          out_args.pop_back();
         }
         fn(stack);
       };
