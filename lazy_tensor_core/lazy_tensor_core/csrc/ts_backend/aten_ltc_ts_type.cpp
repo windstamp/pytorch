@@ -8,6 +8,7 @@
 #include "lazy_tensor_core/csrc/helpers.h"
 #include "lazy_tensor_core/csrc/ops/as_strided.h"
 #include "lazy_tensor_core/csrc/tensor_impl.h"
+#include "lazy_tensor_core/csrc/tensor_util.h"
 #include "lazy_tensor_core/csrc/torch_util.h"
 #include "lazy_tensor_core/csrc/ts_backend/LazyNativeFunctions.h"
 #include "lazy_tensor_core/csrc/ts_backend/aten_autograd_ops_ts.h"
@@ -68,6 +69,26 @@ at::Tensor subtensor(const at::Tensor& tensor, int dim, int groups, int g) {
   }
   int64_t n = tensor.sizes()[dim] / groups;
   return tensor.narrow(dim, n * g, n).contiguous();
+}
+
+// Return the upper limit for a given type. For floating point typesreturn
+// 2^mantissa to ensure that every value is representable.
+int64_t GetIntegerUpperLimitForType(at::ScalarType dtype) {
+  lazy_tensors::PrimitiveType ltcType = TensorTypeToLtcType(dtype);
+  switch (ltcType) {
+    case lazy_tensors::PrimitiveType::F16:
+      return static_cast<int64_t>(1)
+          << std::numeric_limits<lazy_tensors::half>::digits;
+    case lazy_tensors::PrimitiveType::BF16:
+      return static_cast<int64_t>(1)
+          << std::numeric_limits<lazy_tensors::bfloat16>::digits;
+    case lazy_tensors::PrimitiveType::F32:
+      return static_cast<int64_t>(1) << std::numeric_limits<float>::digits;
+    case lazy_tensors::PrimitiveType::F64:
+      return static_cast<int64_t>(1) << std::numeric_limits<double>::digits;
+    default:
+      return Helpers::MinMaxValues(ltcType).max.toLong();
+  }
 }
 
 }  // namespace
@@ -835,6 +856,23 @@ at::Tensor LazyNativeFunctions::permute(const at::Tensor& self,
   LazyTensor self_tensor = bridge::GetLtcTensor(self);
   return bridge::AtenFromLtcTensor(
       LazyTensor::permute(self_tensor, Helpers::I64List(dims)));
+}
+
+at::Tensor& LazyNativeFunctions::random_(at::Tensor& self,
+    c10::optional<at::Generator> generator) {
+  LTC_FN_COUNTER("lazy::");
+
+  if (generator && generator->defined()) {
+    return at::native::call_fallback_fn<&ltc_eager_fallback,
+        ATEN_OP(random_)>::call(self, generator);
+  }
+
+  auto selfTensor = bridge::GetLtcTensor(self);
+  auto dtype = selfTensor.dtype();
+  // Prevent "to_val" from overflowing with at::ScalarType::Long.
+  int64_t increment = (dtype == at::ScalarType::Long) ? 0 : 1;
+  LazyTensor::random_(selfTensor, 0, GetIntegerUpperLimitForType(dtype) + increment);
+  return self;
 }
 
 at::Tensor LazyNativeFunctions::relu(const at::Tensor& self) {
