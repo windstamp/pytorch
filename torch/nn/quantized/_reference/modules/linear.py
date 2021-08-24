@@ -1,51 +1,61 @@
 import torch
-import torch.nn.quantized as nnq
+import torch.nn as nn
 import torch.nn.functional as F
-from typing import Optional
+from .utils import _init_weight_qparams
+from .utils import _quantize_and_dequantize_weight
+from .utils import _save_weight_qparams
+from .utils import _load_weight_qparams
 
-class Linear(nnq.Linear):
-    """ A backend independent version of nn.quantized.Linear
-        we will not pack the parameters in this module, since weight packing is an
-        optimization for quantized backends supported in PyTorch (fbgemm/qnnpack),
-        this is useful when user want to use this module in other backends like Glow.
+class Linear(nn.Linear):
+    """ A reference quantized linear module that fits into the FX
+    Graph Mode Quantization workflow
+    activation will be floating point Tensor, we will store floating
+    point weight as well in the module, but in forward we'll quantize
+    and dequantize the weight before running the floating point functional
+    linear operator.
     """
-    def __init__(self, in_features, out_features, bias_=True,
-                 dtype=torch.qint8):
-        super().__init__(in_features, out_features, bias_, dtype)
-        self._qweight, self._bias = self._packed_params._weight_bias()
-        del self._packed_params
+    def __init__(self, in_features, out_features, bias_=True, weight_qparams=None):
+        super().__init__(in_features, out_features, bias_)
+        _init_weight_qparams(self, weight_qparams)
 
     def _get_name(self):
         return "QuantizedLinear(Reference)"
 
+    def get_weight(self):
+        return _quantize_and_dequantize_weight(
+            self.weight, self.weight_qscheme, self.weight_dtype, self.weight_scale,
+            self.weight_zero_point, self.weight_axis)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_dequant = x.dequantize()
-        weight_dequant = self._qweight.dequantize()
-        float_result = F.linear(x_dequant, weight_dequant, self._bias)
-        # NEEDFIX: we don't have dtype in the Linear module APIs right now!
-        result = torch.quantize_per_tensor(
-            float_result, self.scale, self.zero_point, torch.quint8)
+        """
+        we have:
+        w(float) -- quant - dequant \
+        x(float) ------------- F.linear ---
+
+        In the full model, we will see
+        w(float) -- quant - *dequant \
+        x -- quant --- *dequant --  *F.linear --- *quant - dequant
+        and the backend should be able to fuse the ops with `*` into a quantized linear
+        """
+        weight_dequant = self.get_weight()
+        result = F.linear(x, weight_dequant, self.bias)
         return result
 
     def _save_to_state_dict(self, destination, prefix, keep_vars):
         super()._save_to_state_dict(destination, prefix, keep_vars)
-        destination[prefix + '_qweight'] = self._qweight
-        destination[prefix + '_bias'] = self._bias
+        _save_weight_qparams(destination, prefix, self.weight_qscheme, self.weight_dtype, self.weight_scale, self.weight_zero_point, self.weight_axis)
 
     def _load_from_state_dict(self, state_dict, prefix, local_metadata, strict,
                               missing_keys, unexpected_keys, error_msgs):
-        self._qweight = state_dict[prefix + '_qweight']
-        self._bias = state_dict[prefix + '_bias']
-        state_dict.pop(prefix + '_qweight')
-        state_dict.pop(prefix + '_bias')
-
+        _load_weight_qparams(self, state_dict)
         super()._load_from_state_dict(
             state_dict, prefix, local_metadata, False,
             missing_keys, unexpected_keys, error_msgs)
 
-    def _weight_bias(self):
-        return self._qweight, self._bias
-
-    def set_weight_bias(self, w: torch.Tensor, b: Optional[torch.Tensor]) -> None:
-        self._qweight = w
-        self._bias = b
+    @classmethod
+    def from_float(cls, float_linear, weight_qparams):
+        qref_linear = Linear(float_linear.in_features, float_linear.out_features, float_linear.bias is not None, weight_qparams)
+        qref_linear.weight = torch.nn.Parameter(float_linear.weight.detach())
+        if float_linear.bias is not None:
+            qref_linear.bias = torch.nn.Parameter(float_linear.bias.detach())
+        return qref_linear
