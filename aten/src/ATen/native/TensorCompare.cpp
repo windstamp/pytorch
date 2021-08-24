@@ -321,6 +321,8 @@ static void isin_sorting(
 }
 
 Tensor where(const Tensor& condition, const Tensor& self, const Tensor& other) {
+  LOG(WARNING) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! where";
+  
   TORCH_CHECK(condition.device() == self.device() && self.device() == other.device(),
               "Expected condition, x and y to be on the same device, but condition is on ",
               condition.device(), " and x and y are on ", self.device(), " and ", other.device(),

@@ -162,6 +162,8 @@ inline std::tuple<c10::MaybeOwned<Tensor>, c10::MaybeOwned<Tensor>, c10::MaybeOw
 expand_outplace(const Tensor &to_expand1,
                 const Tensor &to_expand2,
                 const Tensor &to_expand3) {
+  LOG(WARNING) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! where";
+
   if (to_expand1.sizes().equals(to_expand2.sizes()) && to_expand1.sizes().equals(to_expand3.sizes())) {
     return std::make_tuple(
         c10::MaybeOwned<Tensor>::borrowed(to_expand1),
@@ -171,6 +173,10 @@ expand_outplace(const Tensor &to_expand1,
 
   auto expanded_size12 = infer_size_dimvector(to_expand1.sizes(), to_expand2.sizes());
   auto expanded_size = infer_size_dimvector(expanded_size12, to_expand3.sizes());
+
+  LOG(WARNING) << "expanded_size12: " << expanded_size12;
+  LOG(WARNING) << "expanded_size: " << expanded_size;
+
   return std::make_tuple(
       c10::MaybeOwned<Tensor>::owned(to_expand1.expand(expanded_size)),
       c10::MaybeOwned<Tensor>::owned(to_expand2.expand(expanded_size)),
@@ -211,6 +217,8 @@ expand_outplace(const Tensor &to_expand1,
                 const Tensor &to_expand2,
                 const Tensor &to_expand3,
                 const char *api_name) {
+  LOG(WARNING) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! where";
+
   check_defined({to_expand1, to_expand2, to_expand3}, api_name);
   return expand_outplace(to_expand1, to_expand2, to_expand3);
 }

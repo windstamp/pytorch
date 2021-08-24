@@ -728,6 +728,8 @@ Tensor diag_embed(const Tensor& self, int64_t offset, int64_t dim1_, int64_t dim
 }
 
 Tensor expand(const Tensor& self, IntArrayRef size, bool /*unused*/) {
+  LOG(WARNING) << "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! where";
+
   TORCH_CHECK(size.size() >= (size_t)self.dim(),
            "expand(", self.toString(), "{", self.sizes(), "}, size=", size,
            "): the number of sizes provided (", size.size(), ") ",
@@ -735,10 +737,24 @@ Tensor expand(const Tensor& self, IntArrayRef size, bool /*unused*/) {
            self.dim(), ")");
 
   auto expandedSizesAndStrides = inferExpandGeometry_dimvector(self.sizes(), self.strides(), size);
+  LOG(WARNING) << "expandedSizesAndStrides sizes: " << expandedSizesAndStrides.sizes;
+  LOG(WARNING) << "expandedSizesAndStrides strides: " << expandedSizesAndStrides.strides;
 
   auto result = self.as_strided(
       expandedSizesAndStrides.sizes, expandedSizesAndStrides.strides);
   namedinference::propagate_names_for_expand(result, self);
+
+  LOG(WARNING) << "self name: " << self.name();
+  LOG(WARNING) << "self sizes: " << self.sizes();
+  LOG(WARNING) << "self numel: " << self.numel();
+  // LOG(WARNING) << "self: " << self.toString();
+  LOG(WARNING) << "self: " << self;
+  LOG(WARNING) << "result name: " << result.name();
+  LOG(WARNING) << "result sizes: " << result.sizes();
+  LOG(WARNING) << "result numel: " << result.numel();
+  // LOG(WARNING) << "result: " << result.toString();
+  LOG(WARNING) << "result: " << result;
+
   return result;
 }
 
